@@ -1,44 +1,54 @@
 <!DOCTYPE html>
-<html>
+<html lang="uk">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Telegram Tetris</title>
+    <title>TG Tetris Pro</title>
     <style>
+        /* Стилі для мобілки та темна тема */
         body { 
-            background: #1a1a1a; color: #fff; font-family: 'Segoe UI', sans-serif; 
+            background: #121212; color: #fff; font-family: 'Arial', sans-serif; 
             display: flex; flex-direction: column; align-items: center; 
-            margin: 0; overflow: hidden; touch-action: manipulation;
+            margin: 0; height: 100vh; overflow: hidden; touch-action: none;
         }
-        .stats { font-size: 24px; margin: 10px; font-weight: bold; color: #00d4ff; }
+        #game-container { position: relative; margin-top: 10px; }
+        .stats { font-size: 22px; margin: 10px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; }
         canvas { 
-            border: 4px solid #333; background-color: #000; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            max-height: 60vh; width: auto;
+            border: 3px solid #444; background-color: #000; 
+            border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8);
         }
+        /* Пульт керування */
         .controls { 
-            display: grid; grid-template-columns: repeat(3, 70px); 
-            grid-gap: 10px; margin-top: 20px; 
+            display: grid; grid-template-columns: repeat(3, 80px); 
+            grid-gap: 15px; margin-top: 20px; padding: 10px;
         }
         button { 
-            width: 70px; height: 70px; border-radius: 50%; border: none;
-            background: #444; color: white; font-size: 24px; font-weight: bold;
-            box-shadow: 0 4px #222; active-shadow: 0 0 #222;
+            width: 80px; height: 80px; border-radius: 15px; border: none;
+            background: #333; color: white; font-size: 30px; 
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 5px #111; transition: 0.1s;
         }
-        button:active { transform: translateY(4px); box-shadow: 0 0 #222; background: #666; }
-        .btn-rotate { background: #ff8e0d; grid-column: 2; }
-        .btn-down { background: #2ecc71; grid-column: 2; }
+        button:active { transform: translateY(4px); box-shadow: 0 1px #111; background: #444; }
+        .btn-rotate { background: #ff9800 !important; grid-column: 2; }
+        .btn-down { background: #4caf50 !important; }
+        .btn-side { background: #2196f3 !important; }
     </style>
 </head>
 <body>
+
     <div class="stats">SCORE: <span id="score">0</span></div>
-    <canvas id="tetris" width="240" height="400"></canvas>
+    
+    <div id="game-container">
+        <canvas id="tetris" width="240" height="400"></canvas>
+    </div>
 
     <div class="controls">
-        <div style="grid-column: 2;"><button class="btn-rotate" onclick="playerRotate(1)">↻</button></div>
-        <button onclick="playerMove(-1)">←</button>
-        <button class="btn-down" onclick="playerDrop()">↓</button>
-        <button onclick="playerMove(1)">→</button>
+        <button class="btn-rotate" onclick="playerRotate(1)">↻</button>
+        <div style="grid-row: 2; display: contents;">
+            <button class="btn-side" onclick="playerMove(-1)">←</button>
+            <button class="btn-down" onclick="playerDrop()">↓</button>
+            <button class="btn-side" onclick="playerMove(1)">→</button>
+        </div>
     </div>
 
     <script>
@@ -46,54 +56,45 @@
         const context = canvas.getContext('2d');
         context.scale(20, 20);
 
+        // Кольори для фігур
+        const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
+
         function createMatrix(w, h) {
             const matrix = [];
             while (h--) matrix.push(new Array(w).fill(0));
             return matrix;
         }
 
-        // Логіка повороту матриці
-        function rotate(matrix, dir) {
-            for (let y = 0; y < matrix.length; ++y) {
-                for (let x = 0; x < y; ++x) {
-                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
-                }
-            }
-            if (dir > 0) matrix.forEach(row => row.reverse());
-            else matrix.reverse();
+        function createPiece(type) {
+            if (type === 'I') return [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]];
+            if (type === 'L') return [[0, 2, 0], [0, 2, 0], [0, 2, 2]];
+            if (type === 'J') return [[0, 3, 0], [0, 3, 0], [3, 3, 0]];
+            if (type === 'O') return [[4, 4], [4, 4]];
+            if (type === 'Z') return [[5, 5, 0], [0, 5, 5], [0, 0, 0]];
+            if (type === 'S') return [[0, 6, 6], [6, 6, 0], [0, 0, 0]];
+            if (type === 'T') return [[0, 7, 0], [7, 7, 7], [0, 0, 0]];
         }
 
-        function playerRotate(dir) {
-            const pos = player.pos.x;
-            let offset = 1;
-            rotate(player.matrix, dir);
-            // Перевірка меж при повороті (щоб не застрягти в стіні)
-            while (collide(arena, player)) {
-                player.pos.x += offset;
-                offset = -(offset + (offset > 0 ? 1 : -1));
-                if (offset > player.matrix[0].length) {
-                    rotate(player.matrix, -dir);
-                    player.pos.x = pos;
-                    return;
-                }
-            }
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = colors[value];
+                        context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                        // Малюємо рамку навколо блоку для стилю
+                        context.strokeStyle = '#000';
+                        context.lineWidth = 0.05;
+                        context.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                    }
+                });
+            });
         }
 
-        function playerMove(dir) {
-            player.pos.x += dir;
-            if (collide(arena, player)) {
-                player.pos.x -= dir;
-            }
-        }
-
-        function collide(arena, player) {
-            const [m, o] = [player.matrix, player.pos];
-            for (let y = 0; y < m.length; ++y) {
-                for (let x = 0; x < m[y].length; ++x) {
-                    if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) return true;
-                }
-            }
-            return false;
+        function draw() {
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            drawMatrix(arena, {x: 0, y: 0});
+            drawMatrix(player.matrix, player.pos);
         }
 
         function merge(arena, player) {
@@ -104,15 +105,24 @@
             });
         }
 
-        function playerDrop() {
-            player.pos.y++;
-            if (collide(arena, player)) {
-                player.pos.y--;
-                merge(arena, player);
-                playerReset();
-                arenaSweep();
+        function rotate(matrix, dir) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) {
+                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+                }
             }
-            dropCounter = 0;
+            if (dir > 0) matrix.forEach(row => row.reverse());
+            else matrix.reverse();
+        }
+
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player.pos];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) return true;
+                }
+            }
+            return false;
         }
 
         function arenaSweep() {
@@ -127,17 +137,38 @@
                 score += rowCount * 10;
                 rowCount *= 2;
             }
-            updateScore();
+            document.getElementById('score').innerText = score;
         }
 
-        function createPiece(type) {
-            if (type === 'T') return [[0, 1, 0], [1, 1, 1], [0, 0, 0]];
-            if (type === 'O') return [[2, 2], [2, 2]];
-            if (type === 'L') return [[0, 3, 0], [0, 3, 0], [0, 3, 3]];
-            if (type === 'J') return [[0, 4, 0], [0, 4, 0], [4, 4, 0]];
-            if (type === 'I') return [[0, 5, 0, 0], [0, 5, 0, 0], [0, 5, 0, 0], [0, 5, 0, 0]];
-            if (type === 'S') return [[0, 6, 6], [6, 6, 0], [0, 0, 0]];
-            if (type === 'Z') return [[7, 7, 0], [0, 7, 7], [0, 0, 0]];
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+                arenaSweep();
+            }
+            dropCounter = 0;
+        }
+
+        function playerMove(dir) {
+            player.pos.x += dir;
+            if (collide(arena, player)) player.pos.x -= dir;
+        }
+
+        function playerRotate(dir) {
+            const pos = player.pos.x;
+            let offset = 1;
+            rotate(player.matrix, dir);
+            while (collide(arena, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > player.matrix[0].length) {
+                    rotate(player.matrix, -dir);
+                    player.pos.x = pos;
+                    return;
+                }
+            }
         }
 
         function playerReset() {
@@ -148,36 +179,13 @@
             if (collide(arena, player)) {
                 arena.forEach(row => row.fill(0));
                 score = 0;
-                updateScore();
+                document.getElementById('score').innerText = score;
             }
         }
 
-        function draw() {
-            context.fillStyle = '#000';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-            drawMatrix(arena, {x: 0, y: 0});
-            drawMatrix(player.matrix, player.pos);
-        }
-
-        function drawMatrix(matrix, offset) {
-            const colors = [null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF'];
-            matrix.forEach((row, y) => {
-                row.forEach((value, x) => {
-                    if (value !== 0) {
-                        context.shadowBlur = 5;
-                        context.shadowColor = colors[value];
-                        context.fillStyle = colors[value];
-                        context.fillRect(x + offset.x, y + offset.y, 1, 1);
-                        context.shadowBlur = 0;
-                    }
-                });
-            });
-        }
-
-        function updateScore() { document.getElementById('score').innerText = score; }
-
         const arena = createMatrix(12, 20);
         const player = { pos: {x: 0, y: 0}, matrix: null };
+
         let dropCounter = 0;
         let dropInterval = 1000;
         let lastTime = 0;
@@ -192,8 +200,15 @@
             requestAnimationFrame(update);
         }
 
+        // Керування з клавіатури про всяк випадок
+        document.addEventListener('keydown', event => {
+            if (event.keyCode === 37) playerMove(-1);
+            else if (event.keyCode === 39) playerMove(1);
+            else if (event.keyCode === 40) playerDrop();
+            else if (event.keyCode === 38) playerRotate(1);
+        });
+
         playerReset();
-        updateScore();
         update();
     </script>
 </body>
